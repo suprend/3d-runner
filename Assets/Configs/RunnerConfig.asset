@@ -1,0 +1,97 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fbcf898ec55449fa8c1341e942698160, type: 3}
+  m_Name: RunnerConfig
+  m_EditorClassIdentifier: 
+  laneOffset: 2
+  minLaneIndex: -1
+  maxLaneIndex: 1
+  forwardSpeedStart: 8
+  lateralSpeed: 12
+  jumpVelocity: 9
+  maxJumps: 1
+  coyoteTime: 0.1
+  jumpBufferTime: 0.1
+  jumpCutMultiplier: 1
+  fallGravityMultiplier: 2.2
+  lowJumpGravityMultiplier: 1
+  maxFallSpeed: 25
+  fastFallGravityMultiplier: 10
+  slideDurationSeconds: 1000000
+  slideTransitionSeconds: 0.08
+  slideCooldownSeconds: 0.001
+  slideBufferSeconds: 0.12
+  slideHeightMultiplier: 0.5
+  maxHealth: 3
+  deathRestartDelay: 1
+  fadeDuration: 0.3
+  damageInvulnerabilitySeconds: 0.35
+  damageFlashSeconds: 0.12
+  damageScreenFlashSeconds: 0.12
+  damageScreenFlashAlpha: 0.3
+  damageShakeSeconds: 0.15
+  damageShakeAmplitude: 0.2
+  regenEnabled: 1
+  regenDelaySeconds: 8
+  regenIntervalSeconds: 6
+  regenAmount: 1
+  obstacleTypes:
+  - {fileID: 11400000, guid: 63663cffdc9e4c5e94db509299bac4a1, type: 2}
+  - {fileID: 11400000, guid: 879820180fd84cdbac2687b9fa4f3127, type: 2}
+  - {fileID: 11400000, guid: c2a8a0a68c3d4d8b8f2f9eae7b9c1c8f, type: 2}
+  - {fileID: 11400000, guid: 3f1a0f30d8f74f7990e9d3d10e88b5ce, type: 2}
+  spawnIntervalStart: 1.2
+  spawnIntervalMin: 0.45
+  spawnDistanceAhead: 160
+  initialSpawnStartMeters: 30
+  initialSpawnMinRows: 14
+  minRowGapMeters: 8
+  cleanupDistanceBehind: 20
+  obstaclePoolPrewarmPerType: 30
+  obstaclePoolMaxPerType: 60
+  pickupsEnabled: 1
+  pickupChancePerRow: 0.28
+  pickupTypes:
+  - {fileID: 11400000, guid: 0f2a8c1ac11c4d09a8ff159d2c37f2e6, type: 2}
+  - {fileID: 11400000, guid: 5c0a28c9fa8b4a10a76e9f0f7b346e1e, type: 2}
+  - {fileID: 11400000, guid: 8d2c4c53d25e46af85ccb3aef4e83fe2, type: 2}
+  laneClearRadius: 24
+  jumpBoostVelocity: 9
+  jumpBoostCooldownSeconds: 2
+  comboEnabled: 1
+  basePointsPerMeter: 1
+  comboStepSeconds: 6
+  comboStepMultiplier: 0.25
+  comboMaxMultiplier: 3
+  speedIncreasePerSecond: 1
+  useLogarithmicSpeed: 1
+  speedLogScale: 0.35
+  maxForwardSpeed: 22
+  spawnIntervalDecreasePerSecond: 0.01
+  trackWidth: 8
+  trackSegmentLength: 30
+  trackSegmentCount: 12
+  trackThickness: 0.2
+  trackColor: {r: 0.043137256, g: 0.05882353, b: 0.101960786, a: 1}
+  trackRecycleBehindPlayerDistance: 60
+  cameraOffset: {x: 0, y: 10, z: -5}
+  cameraLookAtOffset: {x: 0, y: 0.65, z: 2.5}
+  cameraSmoothTime: 0.1
+  cameraFarClip: 55
+  fogEnabled: 1
+  fogColor: {r: 0.101960786, g: 0.043137256, b: 0.18039216, a: 1}
+  fogStart: 18
+  fogEnd: 55
+  landingSquashSeconds: 0.1
+  landingSquashAmount: 0.1
+  laneWhooshSeconds: 0.12
+  hintDurationSeconds: 5

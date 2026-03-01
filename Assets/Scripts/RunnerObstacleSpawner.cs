@@ -123,9 +123,6 @@ public class RunnerObstacleSpawner : MonoBehaviour
         CleanupBehindPlayer();
         CleanupPickupsBehindPlayer();
 
-        // Distance-based spawning: always keep a continuous horizon of rows ahead of the player.
-        // The previous time-based spawning could "jump" nextRowZ forward (InvisibleAhead clamp) and create gaps,
-        // which looked like obstacles were disappearing before the player reached them.
         float fillToZ = player.position.z + InvisibleAhead();
         int spawned = 0;
         const int maxRowsPerFrame = 120;
@@ -323,8 +320,6 @@ public class RunnerObstacleSpawner : MonoBehaviour
             {
                 var candidate = stack.Pop();
                 if (candidate == null) continue;
-                // Safety: if pooling got corrupted (e.g. an active object ended up in the pool),
-                // never reuse it from the pool, or it will "teleport" and look like it despawned.
                 if (candidate.gameObject.activeSelf) continue;
                 obstacle = candidate;
             }
@@ -344,9 +339,6 @@ public class RunnerObstacleSpawner : MonoBehaviour
             int max = config != null ? Mathf.Max(1, config.obstaclePoolMaxPerType) : 60;
             if (created >= max)
             {
-                // Soft cap: never recycle active obstacles. Recycling can make obstacles "disappear" before the
-                // player reaches them if the spawn logic gets ahead of the runner. Instead, allow the pool to
-                // grow to whatever size is required by the configured spawn horizon.
                 obstacle = CreateInstance(type);
                 createdCount[type] = created + 1;
                 if (!warnedPoolExhausted)
@@ -405,7 +397,6 @@ public class RunnerObstacleSpawner : MonoBehaviour
     {
         if (obstacleRoot == null || type == null) return;
 
-        // Only for "slide-under" obstacles: visually connect the floating block to the ground so the clearance is readable.
         if (!type.avoidableBySlide) return;
         if (type.yOffset <= 0.01f) return;
 
@@ -417,7 +408,6 @@ public class RunnerObstacleSpawner : MonoBehaviour
         float pillarWidthWorld = Mathf.Clamp(w * 0.12f, 0.10f, 0.16f);
         float pillarDepthWorld = d;
 
-        // Convert desired world-space dimensions into local scale (parent is non-uniformly scaled).
         var pillarLocalScale = new Vector3(
             pillarWidthWorld / w,
             pillarHeightWorld / h,

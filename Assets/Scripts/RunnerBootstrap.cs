@@ -104,7 +104,7 @@ public class RunnerBootstrap : MonoBehaviour
         SetLayer(playerGo, "Player");
 
         var playerCapsule = playerGo.AddComponent<CapsuleCollider>();
-        playerCapsule.direction = 1; // Y
+        playerCapsule.direction = 1;
 
         var visual = GameObject.CreatePrimitive(PrimitiveType.Capsule);
         visual.name = "Visual";
@@ -146,7 +146,6 @@ public class RunnerBootstrap : MonoBehaviour
         var r = visual.GetComponent<Renderer>();
         if (r == null) return;
 
-        // Renderer bounds are in world space; player has identity scale/rot in this template.
         var b = r.bounds;
         var localCenter = b.center - player.position;
         var size = b.size;
@@ -155,7 +154,6 @@ public class RunnerBootstrap : MonoBehaviour
         capsule.height = Mathf.Max(0.2f, size.y);
         capsule.radius = Mathf.Max(0.05f, 0.5f * Mathf.Max(size.x, size.z));
 
-        // Capsule height must be >= diameter.
         float minHeight = capsule.radius * 2f;
         if (capsule.height < minHeight) capsule.height = minHeight;
     }
@@ -164,7 +162,6 @@ public class RunnerBootstrap : MonoBehaviour
     {
         if (player == null || capsule == null) return;
 
-        // Track top surface is at Y=0 in this project.
         float desiredBottomWorldY = 0.02f;
         float bottomLocalY = capsule.center.y - capsule.height * 0.5f;
         float currentBottomWorldY = player.position.y + bottomLocalY;

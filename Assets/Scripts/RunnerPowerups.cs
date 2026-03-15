@@ -19,6 +19,7 @@ public class RunnerPowerups : MonoBehaviour
     public float JumpBoostCooldownRemaining => Mathf.Max(0f, jumpBoostCooldownUntil - Time.time);
     public event System.Action<int> ShieldChargesChanged;
     public event System.Action BoostsChanged;
+    public event System.Action<PickupKind> BonusCollected;
 
     public void Initialize(RunnerConfigSO runnerConfig)
     {
@@ -36,6 +37,7 @@ public class RunnerPowerups : MonoBehaviour
         shieldCharges = Mathf.Max(0, shieldCharges) + Mathf.Max(1, charges);
         ShieldChargesChanged?.Invoke(ShieldCharges);
         BoostsChanged?.Invoke();
+        BonusCollected?.Invoke(PickupKind.Shield);
         ApplyTint();
     }
 
@@ -53,6 +55,7 @@ public class RunnerPowerups : MonoBehaviour
     {
         wallBreakCharges = Mathf.Max(0, wallBreakCharges) + Mathf.Max(1, charges);
         BoostsChanged?.Invoke();
+        BonusCollected?.Invoke(PickupKind.WallBreak);
     }
 
     public bool TryConsumeWallBreak()
@@ -67,6 +70,7 @@ public class RunnerPowerups : MonoBehaviour
     {
         jumpBoostCharges = Mathf.Max(0, jumpBoostCharges) + Mathf.Max(1, charges);
         BoostsChanged?.Invoke();
+        BonusCollected?.Invoke(PickupKind.JumpBoost);
     }
 
     public bool TryConsumeJumpBoost(float cooldownSeconds)

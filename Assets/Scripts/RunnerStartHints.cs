@@ -57,6 +57,8 @@ public class RunnerStartHints : MonoBehaviour
     private void ShowHint()
     {
         if (ui == null || player == null || bootstrap == null || bootstrap.Config == null) return;
+        var gameManager = bootstrap.GetComponent<RunnerGameManager>();
+        if (gameManager != null && gameManager.State != RunnerGameManager.RunState.Running) return;
 
         ui.ShowControlsHint("A/D or \u2190/\u2192: lanes    Space: jump (air Space: jump boost)    E: wall break    Down: slide / fast-fall");
 

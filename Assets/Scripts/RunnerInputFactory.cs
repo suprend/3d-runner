@@ -32,9 +32,13 @@ public static class RunnerInputFactory
         ability.AddBinding("<Keyboard>/e");
         ability.AddBinding("<Gamepad>/buttonEast");
 
+        var pause = map.AddAction("Pause", InputActionType.Button);
+        pause.AddBinding("<Keyboard>/escape");
+        pause.AddBinding("<Gamepad>/start");
+
         var restart = map.AddAction("Restart", InputActionType.Button);
         restart.AddBinding("<Keyboard>/r");
-        restart.AddBinding("<Gamepad>/start");
+        restart.AddBinding("<Keyboard>/enter");
 
         asset.AddActionMap(map);
         return asset;

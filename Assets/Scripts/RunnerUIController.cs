@@ -8,10 +8,12 @@ public class RunnerUIController : MonoBehaviour
 {
     [SerializeField] private Canvas canvas;
 
+    private RunnerConfigSO config;
     private RunnerHealth health;
     private RunnerDifficulty difficulty;
     private RunnerScore score;
     private RunnerPowerups powerups;
+
     private const float HudStatusRefreshInterval = 0.10f;
 
     private GameObject statusPanel;
@@ -26,9 +28,26 @@ public class RunnerUIController : MonoBehaviour
     private Text statusText;
     private Text scoreText;
     private Text multiplierText;
+    private Text bestText;
+
+    private GameObject mainMenuPanel;
+    private Text mainMenuTitleText;
+    private Text mainMenuDeveloperText;
+    private Text mainMenuBestText;
+    private Button startButton;
+    private Button quitButton;
+
+    private GameObject pausePanel;
+    private Text pauseTitleText;
+    private Text pauseSummaryText;
+    private Button resumeButton;
+    private Button pauseMenuButton;
+
     private GameObject gameOverPanel;
     private Text gameOverText;
     private Button restartButton;
+    private Button gameOverMenuButton;
+
     private Image fadeImage;
     private Image damageFlashImage;
     private Coroutine damageFlashCoroutine;
@@ -46,8 +65,16 @@ public class RunnerUIController : MonoBehaviour
     private Coroutine hpRegenShineCoroutine;
     private float nextHudStatusRefreshAt;
 
+    private Action startRequested;
     private Action restartRequested;
+    private Action resumeRequested;
+    private Action menuRequested;
+    private Action quitRequested;
     private static Sprite whiteSprite;
+
+    private int shownPauseScore;
+    private int shownGameOverScore;
+    private int cachedBestScore;
 
     public Canvas Canvas => canvas;
     public Image FadeImage => fadeImage;
@@ -62,28 +89,45 @@ public class RunnerUIController : MonoBehaviour
         FlashScreenTint(new Color(0.20f, 0.58f, 1f, 1f), duration, alpha);
     }
 
-    public void Initialize(Action onRestartRequested)
+    public void Initialize(
+        Action onStartRequested,
+        Action onRestartRequested,
+        Action onResumeRequested,
+        Action onMenuRequested,
+        Action onQuitRequested)
     {
+        startRequested = onStartRequested;
         restartRequested = onRestartRequested;
+        resumeRequested = onResumeRequested;
+        menuRequested = onMenuRequested;
+        quitRequested = onQuitRequested;
+
         EnsureUI();
+        HideMainMenu();
+        HidePauseMenu();
         HideGameOver();
+    }
+
+    public void ConfigurePresentation(RunnerConfigSO runnerConfig)
+    {
+        config = runnerConfig;
+        EnsureUI();
+        RefreshPresentationTexts();
     }
 
     public void SetHudVisible(bool visible)
     {
         if (statusPanel != null) statusPanel.SetActive(visible);
         if (scoreText != null) scoreText.gameObject.SetActive(visible);
+        if (multiplierText != null) multiplierText.gameObject.SetActive(visible);
+        if (bestText != null) bestText.gameObject.SetActive(visible);
     }
 
-    public void Bind(RunnerHealth playerHealth, RunnerDifficulty runnerDifficulty, RunnerScore runnerScore)
+    public void Bind(RunnerHealth playerHealth, RunnerDifficulty runnerDifficulty, RunnerScore runnerScore, RunnerConfigSO runnerConfig)
     {
-        if (health != null) health.HealthChanged -= OnHealthChanged;
-        if (health != null) health.Healed -= OnHealed;
-        if (score != null) score.ScoreChanged -= OnScoreChanged;
-        if (score != null) score.MultiplierChanged -= OnMultiplierChanged;
-        if (powerups != null) powerups.ShieldChargesChanged -= OnShieldChargesChanged;
-        if (powerups != null) powerups.BoostsChanged -= OnBoostsChanged;
+        UnbindEvents();
 
+        config = runnerConfig;
         health = playerHealth;
         difficulty = runnerDifficulty;
         score = runnerScore;
@@ -92,18 +136,57 @@ public class RunnerUIController : MonoBehaviour
         if (health != null) health.HealthChanged += OnHealthChanged;
         if (health != null) health.Healed += OnHealed;
         if (score != null) score.ScoreChanged += OnScoreChanged;
+        if (score != null) score.BestScoreChanged += OnBestScoreChanged;
         if (score != null) score.MultiplierChanged += OnMultiplierChanged;
         if (powerups != null) powerups.ShieldChargesChanged += OnShieldChargesChanged;
         if (powerups != null) powerups.BoostsChanged += OnBoostsChanged;
 
+        RefreshPresentationTexts();
         RefreshHud();
     }
 
-    public void ShowGameOver(int finalScore)
+    public void ShowMainMenu(int bestScoreValue)
     {
         EnsureUI();
+        cachedBestScore = Mathf.Max(0, bestScoreValue);
+        RefreshPresentationTexts();
+        UpdateMainMenuBestText();
+        HidePauseMenu();
+        HideGameOver();
+        if (mainMenuPanel != null) mainMenuPanel.SetActive(true);
+        SetHudVisible(false);
+        SetControlsHintAlpha(0f);
+        SelectButton(startButton);
+    }
+
+    public void HideMainMenu()
+    {
+        if (mainMenuPanel != null) mainMenuPanel.SetActive(false);
+    }
+
+    public void ShowPauseMenu(int currentScore, int bestScoreValue)
+    {
+        EnsureUI();
+        shownPauseScore = Mathf.Max(0, currentScore);
+        cachedBestScore = Mathf.Max(0, bestScoreValue);
+        UpdatePauseSummaryText();
+        if (pausePanel != null) pausePanel.SetActive(true);
+        SelectButton(resumeButton);
+    }
+
+    public void HidePauseMenu()
+    {
+        if (pausePanel != null) pausePanel.SetActive(false);
+    }
+
+    public void ShowGameOver(int finalScore, int bestScoreValue)
+    {
+        EnsureUI();
+        shownGameOverScore = Mathf.Max(0, finalScore);
+        cachedBestScore = Mathf.Max(0, bestScoreValue);
+        UpdateGameOverText();
         if (gameOverPanel != null) gameOverPanel.SetActive(true);
-        if (gameOverText != null) gameOverText.text = $"GAME OVER\n\nScore: {finalScore}\n\nPress R or click Restart";
+        SelectButton(restartButton);
     }
 
     public void HideGameOver()
@@ -119,14 +202,50 @@ public class RunnerUIController : MonoBehaviour
         nextHudStatusRefreshAt = Time.unscaledTime + HudStatusRefreshInterval;
     }
 
+    private void LateUpdate()
+    {
+        if (hpBarFill != null)
+        {
+            float current = hpBarFill.fillAmount;
+            float target = hpFillTarget;
+            float smoothTime = target >= current ? 0.14f : 0.08f;
+            hpBarFill.fillAmount = Mathf.SmoothDamp(current, target, ref hpFillVelocity, smoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
+        }
+
+        if (hpShieldBaseFill != null)
+        {
+            float current = hpShieldBaseFill.fillAmount;
+            float target = hpShieldBaseTarget;
+            hpShieldBaseFill.fillAmount = Mathf.SmoothDamp(current, target, ref hpShieldBaseVelocity, 0.08f, Mathf.Infinity, Time.unscaledDeltaTime);
+        }
+
+        if (hpShieldTopFill != null)
+        {
+            float current = hpShieldTopFill.fillAmount;
+            float target = hpShieldTopTarget;
+            hpShieldTopFill.fillAmount = Mathf.SmoothDamp(current, target, ref hpShieldTopVelocity, 0.08f, Mathf.Infinity, Time.unscaledDeltaTime);
+        }
+    }
+
     private void OnDestroy()
+    {
+        UnbindEvents();
+    }
+
+    private void UnbindEvents()
     {
         if (health != null) health.HealthChanged -= OnHealthChanged;
         if (health != null) health.Healed -= OnHealed;
         if (score != null) score.ScoreChanged -= OnScoreChanged;
+        if (score != null) score.BestScoreChanged -= OnBestScoreChanged;
         if (score != null) score.MultiplierChanged -= OnMultiplierChanged;
         if (powerups != null) powerups.ShieldChargesChanged -= OnShieldChargesChanged;
         if (powerups != null) powerups.BoostsChanged -= OnBoostsChanged;
+
+        health = null;
+        difficulty = null;
+        score = null;
+        powerups = null;
     }
 
     private void OnHealthChanged(int current, int max)
@@ -137,11 +256,25 @@ public class RunnerUIController : MonoBehaviour
     private void OnScoreChanged(int current)
     {
         if (scoreText != null) scoreText.text = $"{current}";
+        if (pausePanel != null && pausePanel.activeSelf)
+        {
+            shownPauseScore = Mathf.Max(0, current);
+            UpdatePauseSummaryText();
+        }
     }
 
-    private void OnMultiplierChanged(float m)
+    private void OnBestScoreChanged(int current)
     {
-        if (multiplierText != null) multiplierText.text = $"x{m:0.00}";
+        cachedBestScore = Mathf.Max(0, current);
+        if (bestText != null) bestText.text = $"BEST {cachedBestScore}";
+        UpdateMainMenuBestText();
+        if (pausePanel != null && pausePanel.activeSelf) UpdatePauseSummaryText();
+        if (gameOverPanel != null && gameOverPanel.activeSelf) UpdateGameOverText();
+    }
+
+    private void OnMultiplierChanged(float multiplier)
+    {
+        if (multiplierText != null) multiplierText.text = $"x{multiplier:0.00}";
         PulseMultiplier();
     }
 
@@ -169,8 +302,13 @@ public class RunnerUIController : MonoBehaviour
         RefreshRuntimeStatus();
         RefreshBoostStatus();
         nextHudStatusRefreshAt = Time.unscaledTime + HudStatusRefreshInterval;
+
         if (scoreText != null) scoreText.text = $"{(score != null ? score.Score : 0)}";
         if (multiplierText != null) multiplierText.text = $"x{(score != null ? score.Multiplier : 1f):0.00}";
+
+        cachedBestScore = score != null ? score.BestScore : cachedBestScore;
+        if (bestText != null) bestText.text = $"BEST {cachedBestScore}";
+        RefreshPresentationTexts();
     }
 
     private void RefreshHealthStatus()
@@ -188,9 +326,9 @@ public class RunnerUIController : MonoBehaviour
     private void RefreshRuntimeStatus()
     {
         if (statusText == null) return;
-        float t = difficulty != null ? difficulty.Elapsed : 0f;
+        float elapsed = difficulty != null ? difficulty.Elapsed : 0f;
         float speed = difficulty != null ? difficulty.CurrentSpeed : 0f;
-        statusText.text = $"Time: {t:0.0}s   Speed: {speed:0.0}";
+        statusText.text = $"Time: {elapsed:0.0}s   Speed: {speed:0.0}";
         RefreshBoostStatus();
     }
 
@@ -202,6 +340,54 @@ public class RunnerUIController : MonoBehaviour
         float cooldown = powerups != null ? powerups.JumpBoostCooldownRemaining : 0f;
         string cooldownLabel = cooldown > 0f ? $"{cooldown:0.0}s" : "ready";
         boostText.text = $"E: WallBreak {wallBreak}   Air Space: JumpBoost {jumpBoost} ({cooldownLabel})";
+    }
+
+    private void RefreshPresentationTexts()
+    {
+        if (mainMenuTitleText != null)
+        {
+            mainMenuTitleText.text = config != null && !string.IsNullOrWhiteSpace(config.gameTitle)
+                ? config.gameTitle
+                : "3D Runner";
+        }
+
+        if (mainMenuDeveloperText != null)
+        {
+            string name = config != null && !string.IsNullOrWhiteSpace(config.developerName)
+                ? config.developerName
+                : "Developer";
+            mainMenuDeveloperText.text = $"by {name}";
+        }
+
+        if (pauseTitleText != null)
+        {
+            pauseTitleText.text = "PAUSED";
+        }
+
+        if (bestText != null)
+        {
+            bestText.text = $"BEST {cachedBestScore}";
+        }
+
+        UpdateMainMenuBestText();
+    }
+
+    private void UpdateMainMenuBestText()
+    {
+        if (mainMenuBestText == null) return;
+        mainMenuBestText.text = $"Best Score: {cachedBestScore}";
+    }
+
+    private void UpdatePauseSummaryText()
+    {
+        if (pauseSummaryText == null) return;
+        pauseSummaryText.text = $"Score: {shownPauseScore}\nBest: {cachedBestScore}";
+    }
+
+    private void UpdateGameOverText()
+    {
+        if (gameOverText == null) return;
+        gameOverText.text = $"GAME OVER\n\nScore: {shownGameOverScore}\nBest: {cachedBestScore}";
     }
 
     private void EnsureUI()
@@ -220,12 +406,12 @@ public class RunnerUIController : MonoBehaviour
         EnsureEventSystem();
 
         statusPanel = CreatePanel(canvas.transform, "StatusPanel", new Color(0.05f, 0.02f, 0.09f, 0.42f));
-        var panelRt2 = (RectTransform)statusPanel.transform;
-        panelRt2.anchorMin = new Vector2(0f, 1f);
-        panelRt2.anchorMax = new Vector2(0f, 1f);
-        panelRt2.pivot = new Vector2(0f, 1f);
-        panelRt2.anchoredPosition = new Vector2(12f, -12f);
-        panelRt2.sizeDelta = new Vector2(300f, 92f);
+        var panelRt = (RectTransform)statusPanel.transform;
+        panelRt.anchorMin = new Vector2(0f, 1f);
+        panelRt.anchorMax = new Vector2(0f, 1f);
+        panelRt.pivot = new Vector2(0f, 1f);
+        panelRt.anchoredPosition = new Vector2(12f, -12f);
+        panelRt.sizeDelta = new Vector2(300f, 92f);
 
         hpText = CreateText(statusPanel.transform, "HPText", 14, TextAnchor.UpperLeft);
         var hpTextRt = (RectTransform)hpText.transform;
@@ -246,17 +432,17 @@ public class RunnerUIController : MonoBehaviour
         shieldTextRt.sizeDelta = new Vector2(84f, 18f);
 
         var hpBarBg = CreatePanel(statusPanel.transform, "HPBarBG", new Color(1f, 1f, 1f, 0.20f));
-        var hpBarBgImg = hpBarBg.GetComponent<Image>();
-        hpBarBgImg.sprite = GetWhiteSprite();
+        var hpBarBgImage = hpBarBg.GetComponent<Image>();
+        hpBarBgImage.sprite = GetWhiteSprite();
 
-        var hpBarBgRt = (RectTransform)hpBarBg.transform;
-        hpBarBgRt.anchorMin = new Vector2(0f, 1f);
-        hpBarBgRt.anchorMax = new Vector2(0f, 1f);
-        hpBarBgRt.pivot = new Vector2(0f, 1f);
-        hpBarBgRt.anchoredPosition = new Vector2(10f, -28f);
-        hpBarBgRt.sizeDelta = new Vector2(280f, 12f);
-        this.hpBarBgRt = hpBarBgRt;
+        var hpBarBgRect = (RectTransform)hpBarBg.transform;
+        hpBarBgRect.anchorMin = new Vector2(0f, 1f);
+        hpBarBgRect.anchorMax = new Vector2(0f, 1f);
+        hpBarBgRect.pivot = new Vector2(0f, 1f);
+        hpBarBgRect.anchoredPosition = new Vector2(10f, -28f);
+        hpBarBgRect.sizeDelta = new Vector2(280f, 12f);
         hpBarBg.AddComponent<RectMask2D>();
+        hpBarBgRt = hpBarBgRect;
 
         var hpFillGo = CreatePanel(hpBarBg.transform, "HPBarFill", new Color(0.18f, 1f, 0.42f, 0.95f));
         hpBarFill = hpFillGo.GetComponent<Image>();
@@ -265,12 +451,7 @@ public class RunnerUIController : MonoBehaviour
         hpBarFill.fillMethod = Image.FillMethod.Horizontal;
         hpBarFill.fillOrigin = (int)Image.OriginHorizontal.Left;
         hpBarFill.fillAmount = 1f;
-
-        var hpFillRt = (RectTransform)hpFillGo.transform;
-        hpFillRt.anchorMin = Vector2.zero;
-        hpFillRt.anchorMax = Vector2.one;
-        hpFillRt.offsetMin = Vector2.zero;
-        hpFillRt.offsetMax = Vector2.zero;
+        StretchToParent(hpFillGo.transform);
 
         var hpShieldBaseGo = CreatePanel(hpBarBg.transform, "HPShieldBaseFill", new Color(0f, 0.90f, 1f, 0f));
         hpShieldBaseFill = hpShieldBaseGo.GetComponent<Image>();
@@ -279,11 +460,7 @@ public class RunnerUIController : MonoBehaviour
         hpShieldBaseFill.fillMethod = Image.FillMethod.Horizontal;
         hpShieldBaseFill.fillOrigin = (int)Image.OriginHorizontal.Left;
         hpShieldBaseFill.fillAmount = 0f;
-        var hpShieldBaseRt = (RectTransform)hpShieldBaseGo.transform;
-        hpShieldBaseRt.anchorMin = Vector2.zero;
-        hpShieldBaseRt.anchorMax = Vector2.one;
-        hpShieldBaseRt.offsetMin = Vector2.zero;
-        hpShieldBaseRt.offsetMax = Vector2.zero;
+        StretchToParent(hpShieldBaseGo.transform);
 
         var hpShieldTopGo = CreatePanel(hpBarBg.transform, "HPShieldTopFill", new Color(0f, 0.65f, 1f, 0f));
         hpShieldTopFill = hpShieldTopGo.GetComponent<Image>();
@@ -292,23 +469,15 @@ public class RunnerUIController : MonoBehaviour
         hpShieldTopFill.fillMethod = Image.FillMethod.Horizontal;
         hpShieldTopFill.fillOrigin = (int)Image.OriginHorizontal.Left;
         hpShieldTopFill.fillAmount = 0f;
-        var hpShieldTopRt = (RectTransform)hpShieldTopGo.transform;
-        hpShieldTopRt.anchorMin = Vector2.zero;
-        hpShieldTopRt.anchorMax = Vector2.one;
-        hpShieldTopRt.offsetMin = Vector2.zero;
-        hpShieldTopRt.offsetMax = Vector2.zero;
+        StretchToParent(hpShieldTopGo.transform);
 
         var hpPulseGo = CreatePanel(hpBarBg.transform, "HPRegenPulse", new Color(0.18f, 1f, 0.42f, 0f));
         hpRegenPulse = hpPulseGo.GetComponent<Image>();
-        var hpPulseRt = (RectTransform)hpPulseGo.transform;
-        hpPulseRt.anchorMin = Vector2.zero;
-        hpPulseRt.anchorMax = Vector2.one;
-        hpPulseRt.offsetMin = Vector2.zero;
-        hpPulseRt.offsetMax = Vector2.zero;
+        StretchToParent(hpPulseGo.transform);
 
         var hpShineGo = CreatePanel(hpBarBg.transform, "HPRegenShine", new Color(0.8f, 1f, 0.85f, 0f));
         hpRegenShine = hpShineGo.GetComponent<Image>();
-        var hpShineRt = (RectTransform)hpShineGo.transform;
+        var hpShineRt = (RectTransform)hpRegenShine.transform;
         hpShineRt.anchorMin = new Vector2(0f, 0f);
         hpShineRt.anchorMax = new Vector2(0f, 1f);
         hpShineRt.pivot = new Vector2(0.5f, 0.5f);
@@ -343,12 +512,21 @@ public class RunnerUIController : MonoBehaviour
 
         multiplierText = CreateText(canvas.transform, "MultiplierText", 18, TextAnchor.UpperCenter);
         multiplierText.fontStyle = FontStyle.Bold;
-        var multRt = (RectTransform)multiplierText.transform;
-        multRt.anchorMin = new Vector2(0.5f, 1f);
-        multRt.anchorMax = new Vector2(0.5f, 1f);
-        multRt.pivot = new Vector2(0.5f, 1f);
-        multRt.anchoredPosition = new Vector2(0f, -52f);
-        multRt.sizeDelta = new Vector2(240f, 26f);
+        var multiplierRt = (RectTransform)multiplierText.transform;
+        multiplierRt.anchorMin = new Vector2(0.5f, 1f);
+        multiplierRt.anchorMax = new Vector2(0.5f, 1f);
+        multiplierRt.pivot = new Vector2(0.5f, 1f);
+        multiplierRt.anchoredPosition = new Vector2(0f, -52f);
+        multiplierRt.sizeDelta = new Vector2(240f, 26f);
+
+        bestText = CreateText(canvas.transform, "BestText", 18, TextAnchor.UpperRight);
+        bestText.fontStyle = FontStyle.Bold;
+        var bestRt = (RectTransform)bestText.transform;
+        bestRt.anchorMin = new Vector2(1f, 1f);
+        bestRt.anchorMax = new Vector2(1f, 1f);
+        bestRt.pivot = new Vector2(1f, 1f);
+        bestRt.anchoredPosition = new Vector2(-16f, -16f);
+        bestRt.sizeDelta = new Vector2(220f, 26f);
 
         controlsHintText = CreateText(canvas.transform, "ControlsHintText", 18, TextAnchor.LowerCenter);
         controlsHintText.fontStyle = FontStyle.Bold;
@@ -360,57 +538,141 @@ public class RunnerUIController : MonoBehaviour
         hintRt.anchoredPosition = new Vector2(0f, 18f);
         hintRt.sizeDelta = new Vector2(900f, 44f);
 
-        gameOverPanel = CreatePanel(canvas.transform, "GameOverPanel", new Color(0f, 0f, 0f, 0.65f));
-        var panelRt = (RectTransform)gameOverPanel.transform;
-        panelRt.anchorMin = new Vector2(0.5f, 0.5f);
-        panelRt.anchorMax = new Vector2(0.5f, 0.5f);
-        panelRt.pivot = new Vector2(0.5f, 0.5f);
-        panelRt.sizeDelta = new Vector2(420f, 260f);
-
-        gameOverText = CreateText(gameOverPanel.transform, "GameOverText", 22, TextAnchor.MiddleCenter);
-        var gotRt = (RectTransform)gameOverText.transform;
-        gotRt.anchorMin = new Vector2(0f, 0f);
-        gotRt.anchorMax = new Vector2(1f, 1f);
-        gotRt.offsetMin = new Vector2(16f, 58f);
-        gotRt.offsetMax = new Vector2(-16f, -16f);
-
-        restartButton = CreateButton(gameOverPanel.transform, "RestartButton", "Restart");
-        var btnRt = (RectTransform)restartButton.transform;
-        btnRt.anchorMin = new Vector2(0.5f, 0f);
-        btnRt.anchorMax = new Vector2(0.5f, 0f);
-        btnRt.pivot = new Vector2(0.5f, 0f);
-        btnRt.anchoredPosition = new Vector2(0f, 16f);
-        btnRt.sizeDelta = new Vector2(180f, 36f);
-
-        restartButton.onClick.AddListener(() => restartRequested?.Invoke());
+        CreateMainMenu();
+        CreatePauseMenu();
+        CreateGameOverMenu();
 
         damageFlashImage = CreateDamageFlash(canvas.transform);
         fadeImage = CreateFade(canvas.transform);
+        RefreshPresentationTexts();
     }
 
-    private void LateUpdate()
+    private void CreateMainMenu()
     {
-        if (hpBarFill != null)
-        {
-            float current = hpBarFill.fillAmount;
-            float target = hpFillTarget;
-            float smoothTime = target >= current ? 0.14f : 0.08f;
-            hpBarFill.fillAmount = Mathf.SmoothDamp(current, target, ref hpFillVelocity, smoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
-        }
+        mainMenuPanel = CreatePanel(canvas.transform, "MainMenuPanel", new Color(0.02f, 0.02f, 0.06f, 0.92f));
+        StretchToParent(mainMenuPanel.transform);
 
-        if (hpShieldBaseFill != null)
-        {
-            float current = hpShieldBaseFill.fillAmount;
-            float target = hpShieldBaseTarget;
-            hpShieldBaseFill.fillAmount = Mathf.SmoothDamp(current, target, ref hpShieldBaseVelocity, 0.08f, Mathf.Infinity, Time.unscaledDeltaTime);
-        }
+        mainMenuTitleText = CreateText(mainMenuPanel.transform, "Title", 44, TextAnchor.MiddleCenter);
+        mainMenuTitleText.fontStyle = FontStyle.Bold;
+        var titleRt = (RectTransform)mainMenuTitleText.transform;
+        titleRt.anchorMin = new Vector2(0.5f, 0.5f);
+        titleRt.anchorMax = new Vector2(0.5f, 0.5f);
+        titleRt.pivot = new Vector2(0.5f, 0.5f);
+        titleRt.anchoredPosition = new Vector2(0f, 140f);
+        titleRt.sizeDelta = new Vector2(700f, 60f);
 
-        if (hpShieldTopFill != null)
-        {
-            float current = hpShieldTopFill.fillAmount;
-            float target = hpShieldTopTarget;
-            hpShieldTopFill.fillAmount = Mathf.SmoothDamp(current, target, ref hpShieldTopVelocity, 0.08f, Mathf.Infinity, Time.unscaledDeltaTime);
-        }
+        mainMenuDeveloperText = CreateText(mainMenuPanel.transform, "Developer", 20, TextAnchor.MiddleCenter);
+        var developerRt = (RectTransform)mainMenuDeveloperText.transform;
+        developerRt.anchorMin = new Vector2(0.5f, 0.5f);
+        developerRt.anchorMax = new Vector2(0.5f, 0.5f);
+        developerRt.pivot = new Vector2(0.5f, 0.5f);
+        developerRt.anchoredPosition = new Vector2(0f, 92f);
+        developerRt.sizeDelta = new Vector2(500f, 30f);
+
+        mainMenuBestText = CreateText(mainMenuPanel.transform, "BestScore", 26, TextAnchor.MiddleCenter);
+        mainMenuBestText.fontStyle = FontStyle.Bold;
+        var menuBestRt = (RectTransform)mainMenuBestText.transform;
+        menuBestRt.anchorMin = new Vector2(0.5f, 0.5f);
+        menuBestRt.anchorMax = new Vector2(0.5f, 0.5f);
+        menuBestRt.pivot = new Vector2(0.5f, 0.5f);
+        menuBestRt.anchoredPosition = new Vector2(0f, 22f);
+        menuBestRt.sizeDelta = new Vector2(400f, 36f);
+
+        startButton = CreateButton(mainMenuPanel.transform, "StartButton", "Start Game");
+        var startRt = (RectTransform)startButton.transform;
+        startRt.anchorMin = new Vector2(0.5f, 0.5f);
+        startRt.anchorMax = new Vector2(0.5f, 0.5f);
+        startRt.pivot = new Vector2(0.5f, 0.5f);
+        startRt.anchoredPosition = new Vector2(0f, -52f);
+        startRt.sizeDelta = new Vector2(220f, 42f);
+        startButton.onClick.AddListener(() => startRequested?.Invoke());
+
+        quitButton = CreateButton(mainMenuPanel.transform, "QuitButton", "Quit");
+        var quitRt = (RectTransform)quitButton.transform;
+        quitRt.anchorMin = new Vector2(0.5f, 0.5f);
+        quitRt.anchorMax = new Vector2(0.5f, 0.5f);
+        quitRt.pivot = new Vector2(0.5f, 0.5f);
+        quitRt.anchoredPosition = new Vector2(0f, -104f);
+        quitRt.sizeDelta = new Vector2(220f, 42f);
+        quitButton.onClick.AddListener(() => quitRequested?.Invoke());
+    }
+
+    private void CreatePauseMenu()
+    {
+        pausePanel = CreatePanel(canvas.transform, "PausePanel", new Color(0f, 0f, 0f, 0.72f));
+        StretchToParent(pausePanel.transform);
+
+        pauseTitleText = CreateText(pausePanel.transform, "PauseTitle", 34, TextAnchor.MiddleCenter);
+        pauseTitleText.fontStyle = FontStyle.Bold;
+        var titleRt = (RectTransform)pauseTitleText.transform;
+        titleRt.anchorMin = new Vector2(0.5f, 0.5f);
+        titleRt.anchorMax = new Vector2(0.5f, 0.5f);
+        titleRt.pivot = new Vector2(0.5f, 0.5f);
+        titleRt.anchoredPosition = new Vector2(0f, 120f);
+        titleRt.sizeDelta = new Vector2(320f, 42f);
+
+        pauseSummaryText = CreateText(pausePanel.transform, "PauseSummary", 24, TextAnchor.MiddleCenter);
+        var summaryRt = (RectTransform)pauseSummaryText.transform;
+        summaryRt.anchorMin = new Vector2(0.5f, 0.5f);
+        summaryRt.anchorMax = new Vector2(0.5f, 0.5f);
+        summaryRt.pivot = new Vector2(0.5f, 0.5f);
+        summaryRt.anchoredPosition = new Vector2(0f, 38f);
+        summaryRt.sizeDelta = new Vector2(340f, 72f);
+
+        resumeButton = CreateButton(pausePanel.transform, "ResumeButton", "Continue");
+        var resumeRt = (RectTransform)resumeButton.transform;
+        resumeRt.anchorMin = new Vector2(0.5f, 0.5f);
+        resumeRt.anchorMax = new Vector2(0.5f, 0.5f);
+        resumeRt.pivot = new Vector2(0.5f, 0.5f);
+        resumeRt.anchoredPosition = new Vector2(0f, -44f);
+        resumeRt.sizeDelta = new Vector2(220f, 42f);
+        resumeButton.onClick.AddListener(() => resumeRequested?.Invoke());
+
+        pauseMenuButton = CreateButton(pausePanel.transform, "PauseMenuButton", "Back To Menu");
+        var pauseMenuRt = (RectTransform)pauseMenuButton.transform;
+        pauseMenuRt.anchorMin = new Vector2(0.5f, 0.5f);
+        pauseMenuRt.anchorMax = new Vector2(0.5f, 0.5f);
+        pauseMenuRt.pivot = new Vector2(0.5f, 0.5f);
+        pauseMenuRt.anchoredPosition = new Vector2(0f, -96f);
+        pauseMenuRt.sizeDelta = new Vector2(220f, 42f);
+        pauseMenuButton.onClick.AddListener(() => menuRequested?.Invoke());
+
+        pausePanel.SetActive(false);
+    }
+
+    private void CreateGameOverMenu()
+    {
+        gameOverPanel = CreatePanel(canvas.transform, "GameOverPanel", new Color(0f, 0f, 0f, 0.78f));
+        StretchToParent(gameOverPanel.transform);
+
+        gameOverText = CreateText(gameOverPanel.transform, "GameOverText", 28, TextAnchor.MiddleCenter);
+        gameOverText.fontStyle = FontStyle.Bold;
+        var gameOverRt = (RectTransform)gameOverText.transform;
+        gameOverRt.anchorMin = new Vector2(0.5f, 0.5f);
+        gameOverRt.anchorMax = new Vector2(0.5f, 0.5f);
+        gameOverRt.pivot = new Vector2(0.5f, 0.5f);
+        gameOverRt.anchoredPosition = new Vector2(0f, 70f);
+        gameOverRt.sizeDelta = new Vector2(420f, 140f);
+
+        restartButton = CreateButton(gameOverPanel.transform, "RestartButton", "Restart");
+        var restartRt = (RectTransform)restartButton.transform;
+        restartRt.anchorMin = new Vector2(0.5f, 0.5f);
+        restartRt.anchorMax = new Vector2(0.5f, 0.5f);
+        restartRt.pivot = new Vector2(0.5f, 0.5f);
+        restartRt.anchoredPosition = new Vector2(0f, -36f);
+        restartRt.sizeDelta = new Vector2(220f, 42f);
+        restartButton.onClick.AddListener(() => restartRequested?.Invoke());
+
+        gameOverMenuButton = CreateButton(gameOverPanel.transform, "MenuButton", "Back To Menu");
+        var menuRt = (RectTransform)gameOverMenuButton.transform;
+        menuRt.anchorMin = new Vector2(0.5f, 0.5f);
+        menuRt.anchorMax = new Vector2(0.5f, 0.5f);
+        menuRt.pivot = new Vector2(0.5f, 0.5f);
+        menuRt.anchoredPosition = new Vector2(0f, -88f);
+        menuRt.sizeDelta = new Vector2(220f, 42f);
+        gameOverMenuButton.onClick.AddListener(() => menuRequested?.Invoke());
+
+        gameOverPanel.SetActive(false);
     }
 
     private void RefreshShieldBar(int shieldCharges, int maxHp)
@@ -498,8 +760,8 @@ public class RunnerUIController : MonoBehaviour
         while (t < duration)
         {
             t += Time.unscaledDeltaTime;
-            float a = Mathf.Lerp(start, 0f, Mathf.Clamp01(t / duration));
-            SetControlsHintAlpha(a);
+            float alpha = Mathf.Lerp(start, 0f, Mathf.Clamp01(t / duration));
+            SetControlsHintAlpha(alpha);
             yield return null;
         }
 
@@ -507,12 +769,12 @@ public class RunnerUIController : MonoBehaviour
         controlsHintFadeCoroutine = null;
     }
 
-    private void SetControlsHintAlpha(float a)
+    private void SetControlsHintAlpha(float alpha)
     {
         if (controlsHintText == null) return;
-        var c = controlsHintText.color;
-        c.a = Mathf.Clamp01(a);
-        controlsHintText.color = c;
+        var color = controlsHintText.color;
+        color.a = Mathf.Clamp01(alpha);
+        controlsHintText.color = color;
     }
 
     private void PulseRegenBar()
@@ -533,22 +795,22 @@ public class RunnerUIController : MonoBehaviour
             yield break;
         }
 
-        float d = 0.28f;
+        float duration = 0.28f;
         float t = 0f;
-        while (t < d)
+        while (t < duration)
         {
             t += Time.unscaledDeltaTime;
-            float u = Mathf.Clamp01(t / d);
-            float a = Mathf.Sin(u * Mathf.PI) * 0.55f;
-            var c = hpRegenPulse.color;
-            c.a = a;
-            hpRegenPulse.color = c;
+            float u = Mathf.Clamp01(t / duration);
+            float alpha = Mathf.Sin(u * Mathf.PI) * 0.55f;
+            var color = hpRegenPulse.color;
+            color.a = alpha;
+            hpRegenPulse.color = color;
             yield return null;
         }
 
-        var cc = hpRegenPulse.color;
-        cc.a = 0f;
-        hpRegenPulse.color = cc;
+        var final = hpRegenPulse.color;
+        final.a = 0f;
+        hpRegenPulse.color = final;
         hpRegenPulseCoroutine = null;
     }
 
@@ -562,28 +824,28 @@ public class RunnerUIController : MonoBehaviour
 
         var rt = (RectTransform)hpRegenShine.transform;
         float width = hpBarBgRt.rect.width;
-        float shineW = rt.sizeDelta.x;
-        float startX = -shineW;
-        float endX = width + shineW;
+        float shineWidth = rt.sizeDelta.x;
+        float startX = -shineWidth;
+        float endX = width + shineWidth;
 
-        float d = 0.32f;
+        float duration = 0.32f;
         float t = 0f;
-        while (t < d)
+        while (t < duration)
         {
             t += Time.unscaledDeltaTime;
-            float u = Mathf.Clamp01(t / d);
+            float u = Mathf.Clamp01(t / duration);
             rt.anchoredPosition = new Vector2(Mathf.Lerp(startX, endX, u), 0f);
 
-            float a = Mathf.Sin(u * Mathf.PI) * 0.38f;
-            var c = hpRegenShine.color;
-            c.a = a;
-            hpRegenShine.color = c;
+            float alpha = Mathf.Sin(u * Mathf.PI) * 0.38f;
+            var color = hpRegenShine.color;
+            color.a = alpha;
+            hpRegenShine.color = color;
             yield return null;
         }
 
-        var cc = hpRegenShine.color;
-        cc.a = 0f;
-        hpRegenShine.color = cc;
+        var final = hpRegenShine.color;
+        final.a = 0f;
+        hpRegenShine.color = final;
         hpRegenShineCoroutine = null;
     }
 
@@ -597,104 +859,17 @@ public class RunnerUIController : MonoBehaviour
     private IEnumerator MultiplierScaleDown()
     {
         if (multiplierText == null) yield break;
-        float d = 0.18f;
+        float duration = 0.18f;
         float t = 0f;
         var start = multiplierText.transform.localScale;
-        while (t < d)
+        while (t < duration)
         {
             t += Time.unscaledDeltaTime;
-            multiplierText.transform.localScale = Vector3.Lerp(start, Vector3.one, Mathf.Clamp01(t / d));
+            multiplierText.transform.localScale = Vector3.Lerp(start, Vector3.one, Mathf.Clamp01(t / duration));
             yield return null;
         }
+
         multiplierText.transform.localScale = Vector3.one;
-    }
-
-    private static Text CreateText(Transform parent, string name, int fontSize, TextAnchor alignment)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = fontSize;
-        text.color = Color.white;
-        text.alignment = alignment;
-        text.raycastTarget = false;
-        return text;
-    }
-
-    private static GameObject CreatePanel(Transform parent, string name, Color color)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var img = go.AddComponent<Image>();
-        img.sprite = GetWhiteSprite();
-        img.color = color;
-        return go;
-    }
-
-    private static Sprite GetWhiteSprite()
-    {
-        if (whiteSprite != null) return whiteSprite;
-        var tex = Texture2D.whiteTexture;
-        whiteSprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
-        return whiteSprite;
-    }
-
-    private static Button CreateButton(Transform parent, string name, string label)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        var img = go.AddComponent<Image>();
-        img.sprite = GetWhiteSprite();
-        img.color = new Color(1f, 1f, 1f, 0.9f);
-
-        var button = go.AddComponent<Button>();
-        button.targetGraphic = img;
-
-        var text = CreateText(go.transform, "Text", 18, TextAnchor.MiddleCenter);
-        text.text = label;
-        text.color = Color.black;
-        var rt = (RectTransform)text.transform;
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.offsetMin = Vector2.zero;
-        rt.offsetMax = Vector2.zero;
-
-        return button;
-    }
-
-    private static Image CreateFade(Transform parent)
-    {
-        var go = new GameObject("Fade");
-        go.transform.SetParent(parent, false);
-        var img = go.AddComponent<Image>();
-        img.sprite = GetWhiteSprite();
-        img.color = new Color(0f, 0f, 0f, 0f);
-        img.raycastTarget = false;
-
-        var rt = (RectTransform)img.transform;
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.offsetMin = Vector2.zero;
-        rt.offsetMax = Vector2.zero;
-        return img;
-    }
-
-    private static Image CreateDamageFlash(Transform parent)
-    {
-        var go = new GameObject("DamageFlash");
-        go.transform.SetParent(parent, false);
-        var img = go.AddComponent<Image>();
-        img.sprite = GetWhiteSprite();
-        img.color = new Color(1f, 0f, 0f, 0f);
-        img.raycastTarget = false;
-
-        var rt = (RectTransform)img.transform;
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.offsetMin = Vector2.zero;
-        rt.offsetMax = Vector2.zero;
-        return img;
     }
 
     private void FlashScreenTint(Color tint, float duration, float alpha)
@@ -723,10 +898,10 @@ public class RunnerUIController : MonoBehaviour
         while (t < duration)
         {
             t += Time.unscaledDeltaTime;
-            float a;
-            if (t <= half) a = Mathf.Lerp(0f, alpha, Mathf.Clamp01(t / half));
-            else a = Mathf.Lerp(alpha, 0f, Mathf.Clamp01((t - half) / half));
-            SetDamageAlpha(a);
+            float currentAlpha;
+            if (t <= half) currentAlpha = Mathf.Lerp(0f, alpha, Mathf.Clamp01(t / half));
+            else currentAlpha = Mathf.Lerp(alpha, 0f, Mathf.Clamp01((t - half) / half));
+            SetDamageAlpha(currentAlpha);
             yield return null;
         }
 
@@ -737,36 +912,126 @@ public class RunnerUIController : MonoBehaviour
     private void SetDamageColor(Color color)
     {
         if (damageFlashImage == null) return;
-        var c = damageFlashImage.color;
-        c.r = color.r;
-        c.g = color.g;
-        c.b = color.b;
-        damageFlashImage.color = c;
+        var current = damageFlashImage.color;
+        current.r = color.r;
+        current.g = color.g;
+        current.b = color.b;
+        damageFlashImage.color = current;
     }
 
-    private void SetDamageAlpha(float a)
+    private void SetDamageAlpha(float alpha)
     {
         if (damageFlashImage == null) return;
-        var c = damageFlashImage.color;
-        c.a = Mathf.Clamp01(a);
-        damageFlashImage.color = c;
+        var current = damageFlashImage.color;
+        current.a = Mathf.Clamp01(alpha);
+        damageFlashImage.color = current;
+    }
+
+    private static void StretchToParent(Transform transform)
+    {
+        var rt = (RectTransform)transform;
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+    }
+
+    private static Text CreateText(Transform parent, string name, int fontSize, TextAnchor alignment)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var text = go.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = fontSize;
+        text.color = Color.white;
+        text.alignment = alignment;
+        text.raycastTarget = false;
+        return text;
+    }
+
+    private static GameObject CreatePanel(Transform parent, string name, Color color)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var image = go.AddComponent<Image>();
+        image.sprite = GetWhiteSprite();
+        image.color = color;
+        return go;
+    }
+
+    private static Button CreateButton(Transform parent, string name, string label)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        var image = go.AddComponent<Image>();
+        image.sprite = GetWhiteSprite();
+        image.color = new Color(1f, 1f, 1f, 0.9f);
+
+        var button = go.AddComponent<Button>();
+        button.targetGraphic = image;
+
+        var text = CreateText(go.transform, "Text", 18, TextAnchor.MiddleCenter);
+        text.text = label;
+        text.color = Color.black;
+        StretchToParent(text.transform);
+
+        return button;
+    }
+
+    private static Sprite GetWhiteSprite()
+    {
+        if (whiteSprite != null) return whiteSprite;
+        var tex = Texture2D.whiteTexture;
+        whiteSprite = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+        return whiteSprite;
+    }
+
+    private static Image CreateFade(Transform parent)
+    {
+        var go = new GameObject("Fade");
+        go.transform.SetParent(parent, false);
+        var image = go.AddComponent<Image>();
+        image.sprite = GetWhiteSprite();
+        image.color = new Color(0f, 0f, 0f, 0f);
+        image.raycastTarget = false;
+        StretchToParent(image.transform);
+        return image;
+    }
+
+    private static Image CreateDamageFlash(Transform parent)
+    {
+        var go = new GameObject("DamageFlash");
+        go.transform.SetParent(parent, false);
+        var image = go.AddComponent<Image>();
+        image.sprite = GetWhiteSprite();
+        image.color = new Color(1f, 0f, 0f, 0f);
+        image.raycastTarget = false;
+        StretchToParent(image.transform);
+        return image;
     }
 
     private static void EnsureEventSystem()
     {
         if (FindFirstObjectByType<EventSystem>() != null) return;
 
-        var esGo = new GameObject("EventSystem");
-        esGo.AddComponent<EventSystem>();
+        var go = new GameObject("EventSystem");
+        go.AddComponent<EventSystem>();
 
         var inputSystemUIModule = Type.GetType("UnityEngine.InputSystem.UI.InputSystemUIInputModule, Unity.InputSystem");
         if (inputSystemUIModule != null)
         {
-            esGo.AddComponent(inputSystemUIModule);
+            go.AddComponent(inputSystemUIModule);
         }
         else
         {
-            esGo.AddComponent<StandaloneInputModule>();
+            go.AddComponent<StandaloneInputModule>();
         }
+    }
+
+    private static void SelectButton(Button button)
+    {
+        if (button == null) return;
+        if (EventSystem.current == null) return;
+        EventSystem.current.SetSelectedGameObject(button.gameObject);
     }
 }

@@ -6,9 +6,30 @@
 *.prefab text merge=unityyamlmerge eol=lf
 *.asset text merge=unityyamlmerge eol=lf
 *.mat text merge=unityyamlmerge eol=lf
+*.meta text eol=lf
+*.anim text merge=unityyamlmerge eol=lf
+*.controller text merge=unityyamlmerge eol=lf
+*.overrideController text merge=unityyamlmerge eol=lf
+*.playable text merge=unityyamlmerge eol=lf
+*.mask text merge=unityyamlmerge eol=lf
+*.physicMaterial text merge=unityyamlmerge eol=lf
+*.physicsMaterial2D text merge=unityyamlmerge eol=lf
+*.flare text merge=unityyamlmerge eol=lf
+*.spriteatlas text merge=unityyamlmerge eol=lf
+*.terrainlayer text merge=unityyamlmerge eol=lf
+*.shadervariants text merge=unityyamlmerge eol=lf
 
 # Code
 *.cs text diff=csharp eol=lf
+*.shader text eol=lf
+*.cginc text eol=lf
+*.hlsl text eol=lf
+*.asmdef text eol=lf
+*.asmref text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
 
 # Binary assets
 *.png binary
@@ -20,3 +41,19 @@
 *.wav binary
 *.mp3 binary
 *.ogg binary
+*.psb binary
+*.tif binary
+*.tiff binary
+*.gif binary
+*.exr binary
+*.cubemap binary
+*.unitypackage binary
+*.mov binary
+*.mp4 binary
+*.pdf binary
+*.ttf binary
+*.otf binary
+*.dll binary
+*.a binary
+*.so binary
+*.dylib binary

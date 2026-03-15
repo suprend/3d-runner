@@ -26,6 +26,7 @@ public class RunnerBootstrap : MonoBehaviour
     private RunnerDamageFeedback damageFeedback;
     private RunnerStartHints startHints;
     private RunnerPlayerFeedback playerFeedback;
+    private RunnerPlayerAnimatorFeedback playerAnimatorFeedback;
 
     public RunnerConfigSO Config => config;
     public InputActionAsset InputActions => inputActions;
@@ -120,6 +121,8 @@ public class RunnerBootstrap : MonoBehaviour
             Destroy(visualCol);
         }
 
+        CreateFeedbackAura(visual.transform);
+
         FitPlayerColliderToVisual(playerGo.transform, playerCapsule, visual);
         SnapPlayerToGround(playerGo.transform, playerCapsule);
 
@@ -127,6 +130,8 @@ public class RunnerBootstrap : MonoBehaviour
         rb.mass = 1f;
         rb.constraints = RigidbodyConstraints.FreezeRotation;
         rb.interpolation = RigidbodyInterpolation.Interpolate;
+
+        playerGo.AddComponent<Animator>();
 
         var powerups = playerGo.AddComponent<RunnerPowerups>();
         powerups.Initialize(config);
@@ -229,14 +234,33 @@ public class RunnerBootstrap : MonoBehaviour
     {
         score = GetComponent<RunnerScore>();
         if (score == null) score = gameObject.AddComponent<RunnerScore>();
+        score.LoadPersistentData();
 
         ui = GetComponent<RunnerUIController>();
         if (ui == null) ui = gameObject.AddComponent<RunnerUIController>();
 
-        ui.Initialize(() =>
-        {
-            if (gameManager != null) gameManager.RequestRestart();
-        });
+        ui.Initialize(
+            () =>
+            {
+                if (gameManager != null) gameManager.RequestStart();
+            },
+            () =>
+            {
+                if (gameManager != null) gameManager.RequestRestart();
+            },
+            () =>
+            {
+                if (gameManager != null) gameManager.RequestResume();
+            },
+            () =>
+            {
+                if (gameManager != null) gameManager.RequestReturnToMenu();
+            },
+            () =>
+            {
+                if (gameManager != null) gameManager.RequestQuit();
+            });
+        ui.ConfigurePresentation(config);
         ui.SetHudVisible(showHud);
 
         fader = GetComponent<RunnerScreenFader>();
@@ -254,6 +278,10 @@ public class RunnerBootstrap : MonoBehaviour
         playerFeedback = GetComponent<RunnerPlayerFeedback>();
         if (playerFeedback == null) playerFeedback = gameObject.AddComponent<RunnerPlayerFeedback>();
         playerFeedback.Initialize(this);
+
+        playerAnimatorFeedback = GetComponent<RunnerPlayerAnimatorFeedback>();
+        if (playerAnimatorFeedback == null) playerAnimatorFeedback = gameObject.AddComponent<RunnerPlayerAnimatorFeedback>();
+        playerAnimatorFeedback.Initialize(this);
     }
 
     private void ApplyVisualSettings()
@@ -311,5 +339,45 @@ public class RunnerBootstrap : MonoBehaviour
         int layer = LayerMask.NameToLayer(layerName);
         if (layer < 0) return;
         go.layer = layer;
+    }
+
+    private static void CreateFeedbackAura(Transform visualTransform)
+    {
+        if (visualTransform == null) return;
+
+        var aura = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        aura.name = "FeedbackAura";
+        aura.transform.SetParent(visualTransform, false);
+        aura.transform.localPosition = Vector3.zero;
+        aura.transform.localRotation = Quaternion.identity;
+        aura.transform.localScale = Vector3.one * 1.18f;
+        SetLayer(aura, "Player");
+
+        var collider = aura.GetComponent<Collider>();
+        if (collider != null) Destroy(collider);
+
+        var renderer = aura.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            var material = renderer.material;
+            material.color = new Color(1f, 1f, 1f, 0f);
+            ConfigureTransparentMaterial(material);
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+    }
+
+    private static void ConfigureTransparentMaterial(Material material)
+    {
+        if (material == null) return;
+
+        material.SetFloat("_Mode", 3f);
+        material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        material.SetInt("_ZWrite", 0);
+        material.DisableKeyword("_ALPHATEST_ON");
+        material.EnableKeyword("_ALPHABLEND_ON");
+        material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
     }
 }

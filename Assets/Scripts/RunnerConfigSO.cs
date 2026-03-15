@@ -3,6 +3,10 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Runner/Runner Config", fileName = "RunnerConfig")]
 public class RunnerConfigSO : ScriptableObject
 {
+    [Header("Presentation")]
+    public string gameTitle = "3D Runner";
+    public string developerName = "Mikhail Pospelov";
+
     [Header("Lanes")]
     [Min(0f)] public float laneOffset = 2f;
     public int minLaneIndex = -1;

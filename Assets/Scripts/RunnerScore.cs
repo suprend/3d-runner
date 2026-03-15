@@ -3,21 +3,31 @@ using UnityEngine;
 
 public class RunnerScore : MonoBehaviour
 {
+    private const string BestScoreKey = "Runner.BestScore";
+
     [SerializeField] private Transform player;
     [SerializeField] private RunnerConfigSO config;
     [SerializeField] private RunnerHealth health;
     [SerializeField] private float lastPlayerZ;
     [SerializeField] private float scoreAccum;
     [SerializeField] private int score;
+    [SerializeField] private int bestScore;
     [SerializeField] private float multiplier = 1f;
     [SerializeField] private float timeWithoutHpDamage;
     [SerializeField] private float nextComboStepAt;
 
     public int Score => score;
+    public int BestScore => bestScore;
     public float Multiplier => multiplier;
 
     public event Action<int> ScoreChanged;
+    public event Action<int> BestScoreChanged;
     public event Action<float> MultiplierChanged;
+
+    private void Awake()
+    {
+        LoadPersistentData();
+    }
 
     public void Initialize(Transform playerTransform, RunnerConfigSO runnerConfig, RunnerHealth playerHealth)
     {
@@ -62,6 +72,7 @@ public class RunnerScore : MonoBehaviour
     {
         score = Mathf.Max(0, value);
         ScoreChanged?.Invoke(score);
+        UpdateBestScore(score);
     }
 
     private void SetMultiplier(float value)
@@ -107,6 +118,25 @@ public class RunnerScore : MonoBehaviour
         scoreAccum += Mathf.Max(0, points);
         int newScore = Mathf.Max(0, Mathf.FloorToInt(scoreAccum));
         if (newScore != score) SetScore(newScore);
+    }
+
+    public void LoadPersistentData()
+    {
+        int loaded = Mathf.Max(0, PlayerPrefs.GetInt(BestScoreKey, 0));
+        if (loaded == bestScore) return;
+        bestScore = loaded;
+        BestScoreChanged?.Invoke(bestScore);
+    }
+
+    private void UpdateBestScore(int candidate)
+    {
+        int clamped = Mathf.Max(0, candidate);
+        if (clamped <= bestScore) return;
+
+        bestScore = clamped;
+        PlayerPrefs.SetInt(BestScoreKey, bestScore);
+        PlayerPrefs.Save();
+        BestScoreChanged?.Invoke(bestScore);
     }
 
     private void OnDestroy()
